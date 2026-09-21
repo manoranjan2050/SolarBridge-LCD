@@ -40,6 +40,21 @@
 #define I2C_SDA_PIN D6
 #define I2C_SCL_PIN D5
 
+// ── Status LEDs (plain GPIO, active HIGH) ────────────────────────────────
+// D1/D2 are free now that I2C moved to D5/D6.
+#define LED_LOW_BATTERY_PIN D1   // flashes whenever battery SoC < 30%
+#define LED_LOAD_PIN D2         // flashes whenever load% >= 50, speeds up with load
+
+const float LOW_BATTERY_THRESHOLD = 30.0f;
+const float LOAD_WARN_THRESHOLD = 50.0f;   // normal flash
+const float LOAD_HIGH_THRESHOLD = 70.0f;   // little faster flash
+const float LOAD_CRIT_THRESHOLD = 90.0f;   // fast flash
+
+const unsigned long LOW_BATTERY_BLINK_MS = 400;
+const unsigned long LOAD_WARN_BLINK_MS = 500;
+const unsigned long LOAD_HIGH_BLINK_MS = 250;
+const unsigned long LOAD_CRIT_BLINK_MS = 100;
+
 // ── Config persisted via WiFiManager's custom parameters ───────────────
 #define CONFIG_PATH "/config.json"
 
@@ -83,6 +98,12 @@ unsigned long lastPageFlip = 0;
 uint8_t page = 0;
 const uint8_t PAGE_COUNT = 4;
 const unsigned long PAGE_MS = 4000;
+
+// ── LED blink state ──────────────────────────────────────────────────────
+unsigned long lastBattBlink = 0;
+bool battLedOn = false;
+unsigned long lastLoadBlink = 0;
+bool loadLedOn = false;
 
 // ── Config load/save (LittleFS, so credentials survive re-flashing) ─────
 void loadConfig() {
@@ -300,9 +321,47 @@ void renderPage() {
   }
 }
 
+// ── Status LEDs ───────────────────────────────────────────────────────────
+// Low-battery LED: flashes at a fixed rate whenever SoC < 30%, off otherwise.
+// Load LED: flashes whenever load% >= 50%, and speeds up as load climbs —
+// normal flash at 50%, a little faster at 70%, fast flash at 90%+.
+void updateLeds() {
+  unsigned long now = millis();
+
+  if (state.valid && state.batterySoc < LOW_BATTERY_THRESHOLD) {
+    if (now - lastBattBlink >= LOW_BATTERY_BLINK_MS) {
+      lastBattBlink = now;
+      battLedOn = !battLedOn;
+      digitalWrite(LED_LOW_BATTERY_PIN, battLedOn ? HIGH : LOW);
+    }
+  } else if (battLedOn) {
+    battLedOn = false;
+    digitalWrite(LED_LOW_BATTERY_PIN, LOW);
+  }
+
+  if (state.valid && state.loadPercent >= LOAD_WARN_THRESHOLD) {
+    unsigned long interval = LOAD_WARN_BLINK_MS;
+    if (state.loadPercent >= LOAD_CRIT_THRESHOLD) interval = LOAD_CRIT_BLINK_MS;
+    else if (state.loadPercent >= LOAD_HIGH_THRESHOLD) interval = LOAD_HIGH_BLINK_MS;
+
+    if (now - lastLoadBlink >= interval) {
+      lastLoadBlink = now;
+      loadLedOn = !loadLedOn;
+      digitalWrite(LED_LOAD_PIN, loadLedOn ? HIGH : LOW);
+    }
+  } else if (loadLedOn) {
+    loadLedOn = false;
+    digitalWrite(LED_LOAD_PIN, LOW);
+  }
+}
+
 // ── Setup / loop ──────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
+  pinMode(LED_LOW_BATTERY_PIN, OUTPUT);
+  pinMode(LED_LOAD_PIN, OUTPUT);
+  digitalWrite(LED_LOW_BATTERY_PIN, LOW);
+  digitalWrite(LED_LOAD_PIN, LOW);
   lcdInit();
   loadConfig();
   pollIntervalMs = (uint32_t)atoi(pollSecondsStr) * 1000UL;
@@ -350,5 +409,6 @@ void loop() {
   }
 
   if (dirty) renderPage();
-  delay(200);
+  updateLeds();
+  delay(20);
 }

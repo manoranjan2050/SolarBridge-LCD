@@ -47,6 +47,7 @@ Real unit, wired and running, cycling through live data pulled from production:
 |---|---|
 | ESP8266 dev board | NodeMCU or Wemos D1 Mini |
 | 16x2 LCD + PCF8574 I2C backpack | Address `0x27` or `0x3F` — auto-detected at boot |
+| 2x status LEDs (+ resistor each, ~220-330Ω) | Optional — low battery + high load alerts |
 
 ### Wiring
 
@@ -63,6 +64,28 @@ Real unit, wired and running, cycling through live data pulled from production:
 
 The firmware probes both `0x27`/`0x3F` *and* both SDA/SCL pin orders at boot, so a reversed
 data/clock solder job still works without a code change.
+
+### Status LEDs (optional)
+
+Two plain GPIO LEDs for at-a-glance alerts, independent of what's currently showing on the LCD.
+Each is just an LED + a ~220-330Ω resistor to GND — no driver needed.
+
+| LED | ESP8266 pin | GPIO | Behavior |
+|---|---|---|---|
+| Low battery | **D1** | GPIO5 | Off above 30% SoC. Flashes (400ms) whenever battery SoC drops below **30%**. |
+| High load | **D2** | GPIO4 | Off below 50% load. Flashes once load hits **50%**, speeding up as load climbs: |
+
+Load LED flash rate:
+
+| Load % | Flash speed | Interval |
+|---|---|---|
+| < 50% | Off | — |
+| ≥ 50% | Normal flash | 500ms |
+| ≥ 70% | A little faster | 250ms |
+| ≥ 90% | Fast flash | 100ms |
+
+Both LEDs run on a free-running blink timer independent of the LCD's 4-second page rotation, so
+they keep flashing at the right rate no matter which page is showing.
 
 ## Installation
 
