@@ -105,6 +105,15 @@ bool battLedOn = false;
 unsigned long lastLoadBlink = 0;
 bool loadLedOn = false;
 
+// ── Warning banner timing ────────────────────────────────────────────────
+// "warning" (e.g. Line fail while running on battery — expected, not urgent)
+// only takes over the screen briefly when it first appears, then normal page
+// rotation resumes even if the condition is still active. A real "fault"
+// (critical) still locks the screen the whole time it's active.
+const unsigned long WARNING_DISPLAY_MS = 8000;  // 8s, within the 5-10s ask
+String lastWarningText = "";
+unsigned long warningShownUntil = 0;
+
 // ── Config load/save (LittleFS, so credentials survive re-flashing) ─────
 void loadConfig() {
   if (!LittleFS.begin()) return;
@@ -272,6 +281,18 @@ bool fetchState() {
   state.faultStatus = String((const char *)(doc["inverter_fault_status"] | "ok"));
   state.faultText = String((const char *)(doc["inverter_fault_text"] | ""));
   state.valid = true;
+
+  // Re-arm the warning banner only when a *new* warning appears (status just
+  // became "warning", or the message changed) — not on every poll while a
+  // long-running one like "Line fail" on battery mode stays active.
+  if (state.faultStatus == "warning") {
+    if (state.faultText != lastWarningText) {
+      lastWarningText = state.faultText;
+      warningShownUntil = millis() + WARNING_DISPLAY_MS;
+    }
+  } else {
+    lastWarningText = "";
+  }
   Serial.printf("[API] solar=%.0fW load=%.0fW soc=%.0f%% grid=%.0fW mode=%s\n",
                  state.pvPower, state.loadPower, state.batterySoc, state.gridPower, state.deviceMode.c_str());
   return true;
@@ -290,10 +311,17 @@ void renderPage() {
     return;
   }
 
-  // A fault/warning always takes over the display instead of rotating.
-  if (state.faultStatus == "fault" || state.faultStatus == "warning") {
-    String tag = state.faultStatus == "fault" ? " FAULT" : " WARNING";
-    lcdIconLine(0, ICON_WARNING, tag);
+  // A real fault locks the screen the whole time it's active. A warning
+  // (e.g. "Line fail" while simply running on battery) only takes over
+  // briefly when it first appears, then normal rotation resumes even if
+  // the condition is still active — see fetchState()'s warningShownUntil.
+  if (state.faultStatus == "fault") {
+    lcdIconLine(0, ICON_WARNING, " FAULT");
+    lcdLine(1, state.faultText);
+    return;
+  }
+  if (state.faultStatus == "warning" && millis() < warningShownUntil) {
+    lcdIconLine(0, ICON_WARNING, " WARNING");
     lcdLine(1, state.faultText);
     return;
   }
