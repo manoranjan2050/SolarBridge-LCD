@@ -26,6 +26,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <LittleFS.h>
 #include <Wire.h>
+#include "lcd_icons.h"
 
 // Optional, gitignored — lets you hardcode WiFi/server/token for a fast
 // local flash without going through the captive portal each time. See
@@ -137,6 +138,7 @@ void lcdInit() {
   lcd = new LiquidCrystal_I2C(addr, 16, 2);
   lcd->init();
   lcd->backlight();
+  lcdIconsInstall(*lcd);
 }
 
 void lcdLine(uint8_t row, const String &text) {
@@ -144,6 +146,16 @@ void lcdLine(uint8_t row, const String &text) {
   while (padded.length() < 16) padded += ' ';
   if (padded.length() > 16) padded = padded.substring(0, 16);
   lcd->setCursor(0, row);
+  lcd->print(padded);
+}
+
+// Icon glyph at column 0, then text padded to fill the remaining 15 columns.
+void lcdIconLine(uint8_t row, LcdIcon icon, const String &text) {
+  String padded = text;
+  while (padded.length() < 15) padded += ' ';
+  if (padded.length() > 15) padded = padded.substring(0, 15);
+  lcd->setCursor(0, row);
+  lcd->write((uint8_t)icon);
   lcd->print(padded);
 }
 
@@ -259,29 +271,30 @@ void renderPage() {
 
   // A fault/warning always takes over the display instead of rotating.
   if (state.faultStatus == "fault" || state.faultStatus == "warning") {
-    String tag = state.faultStatus == "fault" ? "! FAULT !" : "! WARNING !";
-    lcdLine(0, tag);
+    String tag = state.faultStatus == "fault" ? " FAULT" : " WARNING";
+    lcdIconLine(0, ICON_WARNING, tag);
     lcdLine(1, state.faultText);
     return;
   }
 
   switch (page) {
     case 0:
-      lcdLine(0, "Solar   " + padNum(state.pvPower, 5) + "W");
+      lcdIconLine(0, ICON_SOLAR, " " + padNum(state.pvPower, 5) + "W");
       lcdLine(1, "Today  " + padNum(state.pvToday, 5, 1) + "kWh");
       break;
     case 1:
-      lcdLine(0, "Load    " + padNum(state.loadPower, 5) + "W");
+      lcdIconLine(0, ICON_LOAD, " " + padNum(state.loadPower, 5) + "W");
       lcdLine(1, "Load%     " + padNum(state.loadPercent, 3) + "%");
       break;
     case 2: {
-      String dir = state.batteryCurrent >= 0 ? "Chg " : "Dis ";
-      lcdLine(0, "Battery    " + padNum(state.batterySoc, 3) + "%");
-      lcdLine(1, dir + padNum(fabs(state.batteryCurrent), 4, 1) + "A");
+      LcdIcon dirIcon = state.batteryCurrent >= 0 ? ICON_ARROW_UP : ICON_ARROW_DOWN;
+      String dirLabel = state.batteryCurrent >= 0 ? "Chg " : "Dis ";
+      lcdIconLine(0, ICON_BATTERY, "    " + padNum(state.batterySoc, 3) + "%");
+      lcdIconLine(1, dirIcon, dirLabel + padNum(fabs(state.batteryCurrent), 4, 1) + "A");
       break;
     }
     case 3:
-      lcdLine(0, "Grid    " + padNum(state.gridPower, 5) + "W");
+      lcdIconLine(0, ICON_GRID, " " + padNum(state.gridPower, 5) + "W");
       lcdLine(1, "Mode:" + state.deviceMode);
       break;
   }
