@@ -89,6 +89,7 @@ struct SolarState {
   float gridPower = 0;
   float pack1Soc = 0, pack2Soc = 0;
   float totalRemainingAh = 0;
+  float totalDesignAh = 0;
   float batteryVoltage = 0;
   String deviceMode = "--";
   String faultStatus = "ok";
@@ -102,7 +103,7 @@ SolarState state;
 unsigned long lastPoll = 0;
 unsigned long lastPageFlip = 0;
 uint8_t page = 0;
-const uint8_t PAGE_COUNT = 6;
+const uint8_t PAGE_COUNT = 7;
 const unsigned long PAGE_MS = 4000;
 
 // ── LED blink state ──────────────────────────────────────────────────────
@@ -275,6 +276,7 @@ bool fetchState() {
   filter["bms1_battery_soc"] = true;
   filter["bms2_battery_soc"] = true;
   filter["bank_total_remaining_capacity"] = true;
+  filter["bank_total_design_capacity"] = true;
   filter["bank_battery_voltage"] = true;
   filter["inverter_battery_voltage"] = true;
 
@@ -296,6 +298,7 @@ bool fetchState() {
   state.pack1Soc = doc["bms1_battery_soc"] | 0.0f;
   state.pack2Soc = doc["bms2_battery_soc"] | 0.0f;
   state.totalRemainingAh = doc["bank_total_remaining_capacity"] | 0.0f;
+  state.totalDesignAh = doc["bank_total_design_capacity"] | 0.0f;
   state.batteryVoltage = doc["bank_battery_voltage"] | (doc["inverter_battery_voltage"] | 0.0f);
   state.deviceMode = String((const char *)(doc["inverter_device_mode"] | "--"));
   state.faultStatus = String((const char *)(doc["inverter_fault_status"] | "ok"));
@@ -411,6 +414,23 @@ void renderPage() {
         lcdLine(1, "~" + padNum(hours, 4, 1) + "h @" + padNum(state.loadPower, 4) + "W");
       } else {
         lcdLine(1, "-- (no load)");
+      }
+      break;
+    }
+    case 6: {
+      // Time to full charge = remaining Ah needed to reach 100% design
+      // capacity, divided by the current charging amps. batteryCurrent > 0
+      // means charging (same convention as page 2's up/down arrow).
+      lcdIconLine(0, ICON_BATTERY, " Charge time");
+      float remainToFullAh = state.totalDesignAh - state.totalRemainingAh;
+      if (state.batteryCurrent > 0.5f && remainToFullAh > 0.1f) {
+        float hours = remainToFullAh / state.batteryCurrent;
+        float chargeWatts = state.batteryCurrent * state.batteryVoltage;
+        lcdLine(1, "~" + padNum(hours, 4, 1) + "h @" + padNum(chargeWatts, 4) + "W");
+      } else if (state.batteryCurrent > 0.5f) {
+        lcdLine(1, "Full");
+      } else {
+        lcdLine(1, "-- not charging");
       }
       break;
     }
