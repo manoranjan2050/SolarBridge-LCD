@@ -23,8 +23,29 @@ Four pages, rotating every 4 seconds:
 | 🔌 Grid | `760W` | `Mode:Line` |
 
 Each line leads with a real custom-character icon on the LCD itself (solar panel, house, battery,
-plug), not just text. If the inverter reports a fault or warning, the display locks onto an `!`
-screen with the message instead of rotating — you'll notice it across the room.
+plug), not just text. If the inverter reports a hard fault, the display locks onto an `!` screen
+with the message instead of rotating, for as long as the fault is active.
+
+### Alert banner
+
+The backend's alert engine (grid lost/restored, battery low, high temperature, overload, battery
+full, inverter fault cleared, ...) also briefly takes over the display — for 10 seconds — whenever
+a *new* one fires:
+
+```
+!WARNING
+Grid power lost
+```
+```
+!INFO
+Grid power restored
+```
+
+After those 10 seconds it goes back to normal page rotation even if the underlying condition (e.g.
+still running on battery) is still active — so a long grid outage doesn't lock the screen on a
+warning for hours, it just flashes the news once and gets back to showing live numbers. Only a
+genuine hard inverter fault stays locked on screen the whole time. Emoji and non-ASCII symbols in
+alert text (⚡, °, ≤, ...) are stripped since the LCD's character ROM can't render them.
 
 ## Demo
 

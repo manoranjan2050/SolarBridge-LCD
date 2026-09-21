@@ -90,6 +90,9 @@ struct SolarState {
   String deviceMode = "--";
   String faultStatus = "ok";
   String faultText = "";
+  String alertLevel = "";
+  String alertMessage = "";
+  double alertTs = 0;
 };
 SolarState state;
 
@@ -105,14 +108,18 @@ bool battLedOn = false;
 unsigned long lastLoadBlink = 0;
 bool loadLedOn = false;
 
-// ── Warning banner timing ────────────────────────────────────────────────
-// "warning" (e.g. Line fail while running on battery — expected, not urgent)
-// only takes over the screen briefly when it first appears, then normal page
-// rotation resumes even if the condition is still active. A real "fault"
-// (critical) still locks the screen the whole time it's active.
-const unsigned long WARNING_DISPLAY_MS = 8000;  // 8s, within the 5-10s ask
-String lastWarningText = "";
-unsigned long warningShownUntil = 0;
+// ── Alert banner timing ───────────────────────────────────────────────────
+// The backend's alert engine (notifier.py) publishes one-shot info/warning/
+// critical events — grid lost/restored, battery low, high temperature,
+// overload, battery full, inverter fault/cleared, etc — each with a
+// timestamp. Whenever a *new* one arrives (ts changes) it takes over the
+// screen for ALERT_DISPLAY_MS, then normal page rotation resumes even if
+// the underlying condition is still active (e.g. still on battery). A real
+// hard inverter "fault" (inverter_fault_status == "fault") still locks the
+// screen for as long as it's active — see renderPage().
+const unsigned long ALERT_DISPLAY_MS = 10000;  // 10s
+double lastAlertTs = 0;
+unsigned long alertShownUntil = 0;
 
 // ── Config load/save (LittleFS, so credentials survive re-flashing) ─────
 void loadConfig() {
@@ -261,8 +268,9 @@ bool fetchState() {
   filter["inverter_device_mode"] = true;
   filter["inverter_fault_status"] = true;
   filter["inverter_fault_text"] = true;
+  filter["alert"] = true;
 
-  DynamicJsonDocument doc(768);
+  DynamicJsonDocument doc(1024);
   DeserializationError err = deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
   http.end();
   if (err) {
@@ -282,19 +290,32 @@ bool fetchState() {
   state.faultText = String((const char *)(doc["inverter_fault_text"] | ""));
   state.valid = true;
 
-  // Re-arm the warning banner only when a *new* warning appears (status just
-  // became "warning", or the message changed) — not on every poll while a
-  // long-running one like "Line fail" on battery mode stays active.
-  if (state.faultStatus == "warning") {
-    if (state.faultText != lastWarningText) {
-      lastWarningText = state.faultText;
-      warningShownUntil = millis() + WARNING_DISPLAY_MS;
+  // The backend's alert engine sends its {level, message, ts} as a nested
+  // JSON *string* (it's just mirrored from an MQTT payload) — parse it
+  // separately from the outer document.
+  const char *alertRaw = doc["alert"] | "";
+  if (alertRaw[0] != '\0') {
+    StaticJsonDocument<256> adoc;
+    if (deserializeJson(adoc, alertRaw) == DeserializationError::Ok) {
+      state.alertLevel = String((const char *)(adoc["level"] | ""));
+      state.alertMessage = String((const char *)(adoc["message"] | ""));
+      state.alertTs = adoc["ts"] | 0.0;
     }
-  } else {
-    lastWarningText = "";
   }
+
+  // Re-arm the alert banner only on a *new* alert (ts changed) — not on
+  // every poll while the underlying condition (e.g. still on battery)
+  // stays active. See notifier.py's edge-triggered alert engine.
+  if (state.alertTs != lastAlertTs && state.alertTs > 0) {
+    lastAlertTs = state.alertTs;
+    alertShownUntil = millis() + ALERT_DISPLAY_MS;
+  }
+
   Serial.printf("[API] solar=%.0fW load=%.0fW soc=%.0f%% grid=%.0fW mode=%s\n",
                  state.pvPower, state.loadPower, state.batterySoc, state.gridPower, state.deviceMode.c_str());
+  if (state.alertMessage.length() > 0) {
+    Serial.printf("[ALERT] [%s] %s\n", state.alertLevel.c_str(), state.alertMessage.c_str());
+  }
   return true;
 }
 
@@ -305,24 +326,43 @@ String padNum(float v, uint8_t width, uint8_t decimals = 0) {
   return String(buf);
 }
 
+// HD44780 ROM can't render UTF-8 (emoji like ⚡/🔋/🔴, symbols like °/≤) —
+// drop every byte with the high bit set so multi-byte sequences vanish
+// instead of printing as garbage glyphs, leaving the plain-ASCII words.
+String asciiOnly(const String &in) {
+  String out;
+  for (size_t i = 0; i < in.length(); i++) {
+    uint8_t c = (uint8_t)in[i];
+    if (c < 0x80) out += (char)c;
+  }
+  out.trim();
+  return out;
+}
+
 void renderPage() {
   if (!state.valid) {
     lcdMessage("Solar Bridge", "Waiting for data");
     return;
   }
 
-  // A real fault locks the screen the whole time it's active. A warning
-  // (e.g. "Line fail" while simply running on battery) only takes over
-  // briefly when it first appears, then normal rotation resumes even if
-  // the condition is still active — see fetchState()'s warningShownUntil.
+  // A real hard inverter fault locks the screen the whole time it's active.
   if (state.faultStatus == "fault") {
     lcdIconLine(0, ICON_WARNING, " FAULT");
     lcdLine(1, state.faultText);
     return;
   }
-  if (state.faultStatus == "warning" && millis() < warningShownUntil) {
-    lcdIconLine(0, ICON_WARNING, " WARNING");
-    lcdLine(1, state.faultText);
+
+  // Any other alert (grid lost/restored, battery low, high temperature,
+  // overload, battery full, inverter fault cleared, ...) takes over the
+  // screen briefly when it first fires, then normal rotation resumes even
+  // if the underlying condition is still active — see fetchState().
+  if (millis() < alertShownUntil && state.alertMessage.length() > 0) {
+    String tag = " INFO";
+    LcdIcon icon = ICON_ARROW_UP;
+    if (state.alertLevel == "warning") { tag = " WARNING"; icon = ICON_WARNING; }
+    else if (state.alertLevel == "critical") { tag = " CRITICAL"; icon = ICON_WARNING; }
+    lcdIconLine(0, icon, tag);
+    lcdLine(1, asciiOnly(state.alertMessage));
     return;
   }
 
