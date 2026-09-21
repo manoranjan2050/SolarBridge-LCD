@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero.svg" alt="Solar Bridge LCD Display" width="100%">
+  <img src="assets/hero-photo.jpg" alt="Solar Bridge LCD Display" width="100%">
 </p>
 
 A tiny satellite display for [Solar Bridge](https://github.com/manoranjan2050/Solar-Bridge-Flin-Fution-JKBMS) —
@@ -25,6 +25,21 @@ Four pages, rotating every 4 seconds:
 Each line leads with a real custom-character icon on the LCD itself (solar panel, house, battery,
 plug), not just text. If the inverter reports a fault or warning, the display locks onto an `!`
 screen with the message instead of rotating — you'll notice it across the room.
+
+## Demo
+
+Real unit, wired and running, cycling through live data pulled from production:
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/demo/battery-closeup.png" width="100%"><br><sub align="center">Battery — SOC % + charge current, with the battery and up-arrow icons</sub></td>
+    <td width="50%"><img src="assets/demo/grid-mode.png" width="100%"><br><sub align="center">Grid — live import/export watts + inverter mode</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/demo/load-percent.png" width="100%"><br><sub align="center">Load — consumption watts + load percentage</sub></td>
+    <td width="50%"><img src="assets/demo/battery-charging.png" width="100%"><br><sub align="center">Battery, mid-refresh — the 5s poll cycle updating in real time</sub></td>
+  </tr>
+</table>
 
 ## Hardware
 
