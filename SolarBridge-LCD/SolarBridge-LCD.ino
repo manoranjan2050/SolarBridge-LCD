@@ -27,15 +27,40 @@
 #include <LittleFS.h>
 #include <Wire.h>
 
+// Optional, gitignored — lets you hardcode WiFi/server/token for a fast
+// local flash without going through the captive portal each time. See
+// secrets.h.example. Never commit a real secrets.h.
+#if __has_include("secrets.h")
+#include "secrets.h"
+#endif
+
+// ── I2C pins — this build is wired to D5/D6, not the ESP8266 defaults ───
+// (D1/D2). Swap these two if the LCD doesn't respond at boot.
+#define I2C_SDA_PIN D6
+#define I2C_SCL_PIN D5
+
 // ── Config persisted via WiFiManager's custom parameters ───────────────
 #define CONFIG_PATH "/config.json"
 
-char serverUrl[96] = "https://solar.manoranjan.dev";
-char apiToken[64] = "";
+#ifndef DEFAULT_SERVER_URL
+#define DEFAULT_SERVER_URL "https://solar.manoranjan.dev"
+#endif
+#ifndef DEFAULT_API_TOKEN
+#define DEFAULT_API_TOKEN ""
+#endif
+#ifndef DEFAULT_WIFI_SSID
+#define DEFAULT_WIFI_SSID ""
+#endif
+#ifndef DEFAULT_WIFI_PASS
+#define DEFAULT_WIFI_PASS ""
+#endif
+
+char serverUrl[96] = DEFAULT_SERVER_URL;
+char apiToken[64] = DEFAULT_API_TOKEN;
 char pollSecondsStr[4] = "5";
 uint32_t pollIntervalMs = 5000;
 
-// ── LCD (auto-detects 0x27, falls back to 0x3F) ─────────────────────────
+// ── LCD (auto-detects 0x27 vs 0x3F, and SDA/SCL pin order) ──────────────
 LiquidCrystal_I2C *lcd = nullptr;
 
 // ── State polled from /api/state ────────────────────────────────────────
@@ -43,7 +68,7 @@ struct SolarState {
   bool valid = false;
   float pvPower = 0, pvToday = 0;
   float loadPower = 0, loadPercent = 0;
-  int batterySoc = 0;
+  float batterySoc = 0;
   float batteryCurrent = 0;
   float gridPower = 0;
   String deviceMode = "--";
@@ -85,11 +110,31 @@ void saveConfig() {
 }
 
 // ── LCD helpers ──────────────────────────────────────────────────────────
+// Tries the wired pin order first (I2C_SDA_PIN/I2C_SCL_PIN), then the
+// swapped order, so a reversed SDA/SCL solder job still works.
+bool i2cProbe(uint8_t addr) {
+  Wire.beginTransmission(addr);
+  return Wire.endTransmission() == 0;
+}
+
 void lcdInit() {
-  Wire.begin();  // D2=SDA, D1=SCL on NodeMCU/Wemos D1 Mini by default
-  Wire.beginTransmission(0x27);
-  bool found27 = (Wire.endTransmission() == 0);
-  lcd = new LiquidCrystal_I2C(found27 ? 0x27 : 0x3F, 16, 2);
+  uint8_t addr = 0x27;
+  bool found = false;
+
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  if (i2cProbe(0x27)) { addr = 0x27; found = true; }
+  else if (i2cProbe(0x3F)) { addr = 0x3F; found = true; }
+
+  if (!found) {
+    // wired backwards? try the swapped pin order before giving up
+    Wire.begin(I2C_SCL_PIN, I2C_SDA_PIN);
+    if (i2cProbe(0x27)) { addr = 0x27; found = true; }
+    else if (i2cProbe(0x3F)) { addr = 0x3F; found = true; }
+  }
+
+  Serial.printf("[LCD] %s at 0x%02X\n", found ? "found" : "NOT FOUND, defaulting to", addr);
+
+  lcd = new LiquidCrystal_I2C(addr, 16, 2);
   lcd->init();
   lcd->backlight();
 }
@@ -157,12 +202,13 @@ bool fetchState() {
   http.setTimeout(8000);
 
   int code = http.GET();
+  Serial.printf("[API] GET %s -> %d\n", url.c_str(), code);
   if (code != HTTP_CODE_OK) {
     http.end();
     return false;
   }
 
-  StaticJsonDocument<384> filter;
+  StaticJsonDocument<512> filter;
   filter["inverter_pv_power"] = true;
   filter["inverter_pv_energy_today"] = true;
   filter["inverter_ac_out_active_power"] = true;
@@ -177,19 +223,24 @@ bool fetchState() {
   DynamicJsonDocument doc(768);
   DeserializationError err = deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
   http.end();
-  if (err) return false;
+  if (err) {
+    Serial.printf("[API] JSON parse failed: %s\n", err.c_str());
+    return false;
+  }
 
   state.pvPower = doc["inverter_pv_power"] | 0.0f;
   state.pvToday = doc["inverter_pv_energy_today"] | 0.0f;
   state.loadPower = doc["inverter_ac_out_active_power"] | 0.0f;
   state.loadPercent = doc["inverter_load_percent"] | 0.0f;
-  state.batterySoc = doc["bank_battery_soc"] | 0;
+  state.batterySoc = doc["bank_battery_soc"] | 0.0f;
   state.batteryCurrent = doc["inverter_battery_current"] | 0.0f;
   state.gridPower = doc["inverter_grid_power"] | 0.0f;
   state.deviceMode = String((const char *)(doc["inverter_device_mode"] | "--"));
   state.faultStatus = String((const char *)(doc["inverter_fault_status"] | "ok"));
   state.faultText = String((const char *)(doc["inverter_fault_text"] | ""));
   state.valid = true;
+  Serial.printf("[API] solar=%.0fW load=%.0fW soc=%.0f%% grid=%.0fW mode=%s\n",
+                 state.pvPower, state.loadPower, state.batterySoc, state.gridPower, state.deviceMode.c_str());
   return true;
 }
 
@@ -245,14 +296,22 @@ void setup() {
   if (pollIntervalMs < 2000) pollIntervalMs = 5000;
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin();
+  if (strlen(DEFAULT_WIFI_SSID) > 0) {
+    Serial.printf("[WiFi] connecting to '%s'...\n", DEFAULT_WIFI_SSID);
+    WiFi.begin(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASS);
+  } else {
+    WiFi.begin();  // last WiFi creds saved by the SDK, if any
+  }
   lcdMessage("Solar Bridge", "Connecting WiFi");
   unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
     delay(250);
+    Serial.print('.');
   }
+  Serial.printf("\n[WiFi] status=%d (3=connected) ip=%s\n", WiFi.status(), WiFi.localIP().toString().c_str());
 
   if (WiFi.status() != WL_CONNECTED || strlen(apiToken) == 0) {
+    Serial.println("[WiFi] falling back to setup portal");
     runWiFiPortal();
   }
 

@@ -6,6 +6,9 @@ build/
 *.bin
 *.elf
 
+# Real WiFi/server/token defaults — never commit these
+SolarBridge-LCD/secrets.h
+
 # OS cruft
 .DS_Store
 Thumbs.db
