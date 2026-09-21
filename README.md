@@ -13,7 +13,7 @@ to open — just glance at the wall.
 
 ## What it shows
 
-Four pages, rotating every 4 seconds:
+Six pages, rotating every 4 seconds:
 
 | Page | Line 1 | Line 2 |
 |---|---|---|
@@ -21,6 +21,14 @@ Four pages, rotating every 4 seconds:
 | 🏠 Load | `920W` | `Load% 24%` |
 | 🔋 Battery | `76%` | `▲ Chg 6.2A` (or `▼ Dis`) |
 | 🔌 Grid | `760W` | `Mode:Line` |
+| 🔋 Battery packs | `P1:92% P2:88%` | `Total 183.7Ah` |
+| 🔋 Backup time | `Backup time` | `~9.6h @1011W` (or `-- (no load)`) |
+
+Backup time is estimated live from the battery bank's total remaining capacity (Ah) × pack
+voltage, divided by the current load (W) — it updates every poll, so it reflects the real
+discharge rate right now, not a fixed nameplate estimate. It only shows a number while actually
+under load; with no load (or while charging) it shows `-- (no load)` since "time to empty" isn't
+meaningful there.
 
 Each line leads with a real custom-character icon on the LCD itself (solar panel, house, battery,
 plug), not just text. If the inverter reports a hard fault, the display locks onto an `!` screen

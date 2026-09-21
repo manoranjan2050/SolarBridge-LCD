@@ -87,6 +87,9 @@ struct SolarState {
   float batterySoc = 0;
   float batteryCurrent = 0;
   float gridPower = 0;
+  float pack1Soc = 0, pack2Soc = 0;
+  float totalRemainingAh = 0;
+  float batteryVoltage = 0;
   String deviceMode = "--";
   String faultStatus = "ok";
   String faultText = "";
@@ -99,7 +102,7 @@ SolarState state;
 unsigned long lastPoll = 0;
 unsigned long lastPageFlip = 0;
 uint8_t page = 0;
-const uint8_t PAGE_COUNT = 4;
+const uint8_t PAGE_COUNT = 6;
 const unsigned long PAGE_MS = 4000;
 
 // ── LED blink state ──────────────────────────────────────────────────────
@@ -269,6 +272,11 @@ bool fetchState() {
   filter["inverter_fault_status"] = true;
   filter["inverter_fault_text"] = true;
   filter["alert"] = true;
+  filter["bms1_battery_soc"] = true;
+  filter["bms2_battery_soc"] = true;
+  filter["bank_total_remaining_capacity"] = true;
+  filter["bank_battery_voltage"] = true;
+  filter["inverter_battery_voltage"] = true;
 
   DynamicJsonDocument doc(1024);
   DeserializationError err = deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
@@ -285,6 +293,10 @@ bool fetchState() {
   state.batterySoc = doc["bank_battery_soc"] | 0.0f;
   state.batteryCurrent = doc["inverter_battery_current"] | 0.0f;
   state.gridPower = doc["inverter_grid_power"] | 0.0f;
+  state.pack1Soc = doc["bms1_battery_soc"] | 0.0f;
+  state.pack2Soc = doc["bms2_battery_soc"] | 0.0f;
+  state.totalRemainingAh = doc["bank_total_remaining_capacity"] | 0.0f;
+  state.batteryVoltage = doc["bank_battery_voltage"] | (doc["inverter_battery_voltage"] | 0.0f);
   state.deviceMode = String((const char *)(doc["inverter_device_mode"] | "--"));
   state.faultStatus = String((const char *)(doc["inverter_fault_status"] | "ok"));
   state.faultText = String((const char *)(doc["inverter_fault_text"] | ""));
@@ -386,6 +398,22 @@ void renderPage() {
       lcdIconLine(0, ICON_GRID, " " + padNum(state.gridPower, 5) + "W");
       lcdLine(1, "Mode:" + state.deviceMode);
       break;
+    case 4:
+      lcdIconLine(0, ICON_BATTERY, "P1:" + padNum(state.pack1Soc, 2) + "% P2:" + padNum(state.pack2Soc, 2) + "%");
+      lcdLine(1, "Total " + padNum(state.totalRemainingAh, 5, 1) + "Ah");
+      break;
+    case 5: {
+      // Backup time = usable energy left (Ah * V) / current load (W).
+      // Only meaningful while actually discharging into a load.
+      lcdIconLine(0, ICON_BATTERY, " Backup time");
+      if (state.loadPower > 1.0f) {
+        float hours = (state.totalRemainingAh * state.batteryVoltage) / state.loadPower;
+        lcdLine(1, "~" + padNum(hours, 4, 1) + "h @" + padNum(state.loadPower, 4) + "W");
+      } else {
+        lcdLine(1, "-- (no load)");
+      }
+      break;
+    }
   }
 }
 
