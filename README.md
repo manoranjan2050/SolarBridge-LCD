@@ -35,6 +35,10 @@ screen with the message instead of rotating — you'll notice it across the room
 
 ### Wiring
 
+<p align="center">
+  <img src="assets/wiring.svg" alt="Wiring diagram: 16x2 I2C LCD to Wemos D1 Mini" width="100%">
+</p>
+
 | LCD backpack | ESP8266 (NodeMCU / D1 Mini) | GPIO |
 |---|---|---|
 | GND | GND | — |

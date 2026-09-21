@@ -1,0 +1,93 @@
+<svg viewBox="0 0 1100 560" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0F1223"/>
+      <stop offset="100%" stop-color="#1B1F3B"/>
+    </linearGradient>
+    <linearGradient id="lcdPanel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8FBF6E"/>
+      <stop offset="100%" stop-color="#6FA652"/>
+    </linearGradient>
+    <linearGradient id="boardGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1E2340"/>
+      <stop offset="100%" stop-color="#161A30"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1100" height="560" fill="url(#bg2)"/>
+
+  <text x="40" y="50" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="800" fill="#ffffff">Wiring: 16x2 I2C LCD &#8594; Wemos D1 Mini (ESP8266)</text>
+  <text x="40" y="78" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#9AA0C3">4 wires total &#183; VCC must be 5V, not 3.3V</text>
+
+  <!-- LCD module -->
+  <g transform="translate(60,130)">
+    <rect x="-16" y="-16" width="392" height="232" rx="16" fill="#05060D" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+    <rect x="0" y="0" width="360" height="180" rx="4" fill="url(#lcdPanel)"/>
+    <g font-family="Consolas, 'Courier New', monospace" font-size="24" fill="#12331a">
+      <text x="20" y="70">Solar   1024W</text>
+      <text x="20" y="120">Today  10.4kWh</text>
+    </g>
+    <!-- I2C backpack -->
+    <rect x="40" y="188" width="90" height="26" rx="4" fill="#2b2f22" stroke="#000" stroke-opacity="0.3"/>
+    <text x="46" y="206" font-family="Consolas, monospace" font-size="13" fill="#c8d6a0">PCF8574</text>
+    <!-- 4 pin header -->
+    <g>
+      <circle cx="150" cy="201" r="5" fill="#f2c14e"/>
+      <circle cx="170" cy="201" r="5" fill="#f2c14e"/>
+      <circle cx="190" cy="201" r="5" fill="#f2c14e"/>
+      <circle cx="210" cy="201" r="5" fill="#f2c14e"/>
+    </g>
+    <text x="360" y="-30" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" fill="#ffffff" text-anchor="end">16x2 I2C LCD</text>
+  </g>
+
+  <!-- Wemos D1 Mini -->
+  <g transform="translate(700,110)">
+    <rect x="0" y="0" width="220" height="300" rx="14" fill="url(#boardGrad)" stroke="#ffffff" stroke-opacity="0.1" stroke-width="2"/>
+    <rect x="70" y="16" width="80" height="46" rx="4" fill="#8c8c8c"/>
+    <text x="110" y="44" font-family="Consolas, monospace" font-size="11" fill="#111" text-anchor="middle">ESP-12F</text>
+    <text x="110" y="90" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">Wemos D1</text>
+    <text x="110" y="110" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700" fill="#FFB347" text-anchor="middle">Mini</text>
+
+    <!-- pin labels, right column: D5, D6 -->
+    <g font-family="Consolas, monospace" font-size="14" fill="#E7E9F5">
+      <circle cx="220" cy="150" r="5" fill="#4FACFE"/>
+      <text x="234" y="155">D5 (SCL)</text>
+      <circle cx="220" cy="180" r="5" fill="#43E97B"/>
+      <text x="234" y="185">D6 (SDA)</text>
+      <circle cx="220" cy="210" r="5" fill="#FF5E62"/>
+      <text x="234" y="215">5V</text>
+      <circle cx="220" cy="240" r="5" fill="#9AA0C3"/>
+      <text x="234" y="245">GND</text>
+    </g>
+  </g>
+
+  <!-- Connecting wires -->
+  <g fill="none" stroke-width="3">
+    <path d="M 270 331 C 450 331, 500 240, 700 260" stroke="#4FACFE"/>
+    <path d="M 250 331 C 430 331, 480 210, 700 290" stroke="#43E97B"/>
+    <path d="M 230 331 C 410 331, 460 180, 700 320" stroke="#FF5E62"/>
+    <path d="M 210 331 C 390 331, 440 150, 700 350" stroke="#9AA0C3"/>
+  </g>
+
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">
+    <rect x="440" y="230" width="42" height="20" rx="4" fill="#4FACFE" fill-opacity="0.15"/>
+    <text x="447" y="245" fill="#4FACFE">SCL</text>
+    <rect x="440" y="262" width="42" height="20" rx="4" fill="#43E97B" fill-opacity="0.15"/>
+    <text x="447" y="277" fill="#43E97B">SDA</text>
+    <rect x="440" y="294" width="42" height="20" rx="4" fill="#FF5E62" fill-opacity="0.15"/>
+    <text x="447" y="309" fill="#FF5E62">VCC</text>
+    <rect x="440" y="326" width="48" height="20" rx="4" fill="#9AA0C3" fill-opacity="0.15"/>
+    <text x="447" y="341" fill="#9AA0C3">GND</text>
+  </g>
+
+  <!-- Legend / table -->
+  <g transform="translate(60,420)" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#E7E9F5">
+    <text x="0" y="0" font-weight="700" fill="#ffffff" font-size="17">Pin reference</text>
+    <text x="0" y="34">LCD SDA &#8594; D6 (GPIO12)</text>
+    <text x="0" y="60">LCD SCL &#8594; D5 (GPIO14)</text>
+    <text x="320" y="34">LCD VCC &#8594; 5V / VU / VIN</text>
+    <text x="320" y="60">LCD GND &#8594; GND</text>
+    <text x="0" y="100" fill="#6B7099" font-size="13">Board auto-probes both pin orders and both 0x27/0x3F addresses at boot,</text>
+    <text x="0" y="120" fill="#6B7099" font-size="13">so a reversed SDA/SCL solder job still works.</text>
+  </g>
+</svg>
