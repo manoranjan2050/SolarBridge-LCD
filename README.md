@@ -148,8 +148,9 @@ platformio run --target upload
 
 `platformio.ini` already pins the board (`nodemcuv2`) and pulls in the 3 required libraries
 automatically on first build — nothing to install by hand. If your board enumerates on a port
-other than what's detected automatically, add `upload_port = COM7` (or `/dev/ttyUSB0` on
-Linux/Mac) to `platformio.ini`.
+other than what's set in `platformio.ini` (it changes any time you unplug/replug or use a
+different USB port), override it: `platformio run -t upload --upload-port COM9` (or
+`/dev/ttyUSB0` on Linux/Mac).
 
 **Option B: Arduino IDE**
 
@@ -183,6 +184,27 @@ settings are stored in flash (LittleFS) and survive a normal reset.
 Copy `SolarBridge-LCD/secrets.h.example` to `SolarBridge-LCD/secrets.h` and fill in real WiFi/
 server/token values — the firmware uses those as defaults and skips the captive portal entirely.
 `secrets.h` is gitignored; it never leaves your machine.
+
+You can set a **primary and a backup WiFi network** (`DEFAULT_WIFI_SSID`/`DEFAULT_WIFI_SSID2`).
+At boot the board tries the primary first, falls back to the backup if that fails, and — while
+running — alternates between the two every 30 seconds if it ever loses the connection. Leave the
+second pair blank (`""`) if you only have one network.
+
+### 5. Later updates: flash over WiFi (OTA), no cable needed
+
+Once this firmware (with `ArduinoOTA` built in) is on the board once via USB, every update after
+that can go out over WiFi instead:
+
+```bash
+platformio run -t upload --upload-port 192.168.1.XXX --upload-flags="--auth=your-ota-password"
+```
+
+Use the board's IP (printed on boot in the serial log, `[OTA] ready, ... ip=...`, or check your
+router's DHCP client list — hostname `solarbridge-lcd`). PlatformIO auto-detects the `espota`
+protocol when the upload port looks like an IP instead of a serial port. Set `DEFAULT_OTA_PASSWORD`
+in `secrets.h` (see `secrets.h.example`) — without one, OTA still works but anyone on the same
+network could push firmware to the board. The LCD shows `OTA Update` and a progress percentage
+while it flashes, then reboots into the new firmware automatically.
 
 ## Libraries
 

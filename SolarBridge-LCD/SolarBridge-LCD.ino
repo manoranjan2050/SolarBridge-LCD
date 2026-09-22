@@ -26,6 +26,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <LittleFS.h>
 #include <Wire.h>
+#include <ArduinoOTA.h>
 #include "lcd_icons.h"
 
 // Optional, gitignored — lets you hardcode WiFi/server/token for a fast
@@ -69,6 +70,22 @@ const unsigned long LOAD_CRIT_BLINK_MS = 100;
 #endif
 #ifndef DEFAULT_WIFI_PASS
 #define DEFAULT_WIFI_PASS ""
+#endif
+// Optional second (backup) network — tried if the primary one fails to
+// connect at boot, and alternated with on every reconnect attempt while
+// running. Leave undefined/empty if you only have one network.
+#ifndef DEFAULT_WIFI_SSID2
+#define DEFAULT_WIFI_SSID2 ""
+#endif
+#ifndef DEFAULT_WIFI_PASS2
+#define DEFAULT_WIFI_PASS2 ""
+#endif
+// OTA (over-the-air) update password — set this in secrets.h so re-flashing
+// over WiFi requires it. Left blank, OTA still works but anyone on the same
+// network could push firmware to the board, so set one for anything beyond
+// bench testing.
+#ifndef DEFAULT_OTA_PASSWORD
+#define DEFAULT_OTA_PASSWORD ""
 #endif
 
 char serverUrl[96] = DEFAULT_SERVER_URL;
@@ -203,6 +220,71 @@ void lcdIconLine(uint8_t row, LcdIcon icon, const String &text) {
 void lcdMessage(const String &l1, const String &l2) {
   lcdLine(0, l1);
   lcdLine(1, l2);
+}
+
+// ── WiFi: primary + backup network ──────────────────────────────────────
+// Blocking connect attempt to one network, used only at boot (where a
+// short wait is fine and the LCD can show progress).
+bool connectWiFiBlocking(const char *ssid, const char *pass, unsigned long timeoutMs) {
+  WiFi.begin(ssid, pass);
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+    delay(250);
+    Serial.print('.');
+  }
+  return WiFi.status() == WL_CONNECTED;
+}
+
+// Tries the primary network first, then the backup, then whatever the SDK
+// last had saved (in case neither hardcoded network is configured).
+bool connectWiFi() {
+  bool connected = false;
+  if (strlen(DEFAULT_WIFI_SSID) > 0) {
+    Serial.printf("[WiFi] connecting to primary '%s'...\n", DEFAULT_WIFI_SSID);
+    lcdMessage("Solar Bridge", "WiFi: primary");
+    connected = connectWiFiBlocking(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASS, 15000);
+  }
+  if (!connected && strlen(DEFAULT_WIFI_SSID2) > 0) {
+    Serial.printf("\n[WiFi] primary failed, trying backup '%s'...\n", DEFAULT_WIFI_SSID2);
+    lcdMessage("Solar Bridge", "WiFi: backup");
+    connected = connectWiFiBlocking(DEFAULT_WIFI_SSID2, DEFAULT_WIFI_PASS2, 15000);
+  }
+  if (!connected && strlen(DEFAULT_WIFI_SSID) == 0 && strlen(DEFAULT_WIFI_SSID2) == 0) {
+    lcdMessage("Solar Bridge", "Connecting WiFi");
+    WiFi.begin();  // last WiFi creds saved by the SDK, if any
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+      delay(250);
+      Serial.print('.');
+    }
+    connected = WiFi.status() == WL_CONNECTED;
+  }
+  return connected;
+}
+
+// Non-blocking: called from loop() while disconnected, alternating between
+// primary and backup every WIFI_RETRY_MS so a dead primary AP doesn't keep
+// the board from ever trying the backup one.
+unsigned long lastWifiRetry = 0;
+uint8_t wifiRetrySlot = 0;
+const unsigned long WIFI_RETRY_MS = 30000;
+
+void retryWiFiIfNeeded() {
+  if (WiFi.status() == WL_CONNECTED) return;
+  unsigned long now = millis();
+  if (now - lastWifiRetry < WIFI_RETRY_MS) return;
+  lastWifiRetry = now;
+
+  wifiRetrySlot = 1 - wifiRetrySlot;
+  if (wifiRetrySlot == 0 && strlen(DEFAULT_WIFI_SSID) > 0) {
+    Serial.printf("[WiFi] reconnecting to primary '%s'...\n", DEFAULT_WIFI_SSID);
+    WiFi.begin(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASS);
+  } else if (strlen(DEFAULT_WIFI_SSID2) > 0) {
+    Serial.printf("[WiFi] reconnecting to backup '%s'...\n", DEFAULT_WIFI_SSID2);
+    WiFi.begin(DEFAULT_WIFI_SSID2, DEFAULT_WIFI_PASS2);
+  } else {
+    WiFi.reconnect();
+  }
 }
 
 // ── WiFiManager: extra fields for server/token/poll interval ────────────
@@ -437,6 +519,34 @@ void renderPage() {
   }
 }
 
+// ── OTA (flash new firmware over WiFi, no USB cable needed) ─────────────
+// Once this build is on the board, later updates can go out with
+// `platformio run -t upload --upload-port <board-ip>` (protocol auto-
+// detected as espota when the port looks like an IP) instead of a cable.
+void setupOTA() {
+  ArduinoOTA.setHostname("solarbridge-lcd");
+  if (strlen(DEFAULT_OTA_PASSWORD) > 0) ArduinoOTA.setPassword(DEFAULT_OTA_PASSWORD);
+
+  ArduinoOTA.onStart([]() {
+    Serial.println("[OTA] update starting");
+    lcdMessage("OTA Update", "Starting...");
+  });
+  ArduinoOTA.onProgress([](unsigned int done, unsigned int total) {
+    lcdMessage("OTA Update", padNum((done * 100.0f) / total, 3, 0) + "%");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("[OTA] update done, rebooting");
+    lcdMessage("OTA Update", "Done! Rebooting");
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("[OTA] error %u\n", error);
+    lcdMessage("OTA Error", "Code: " + String((unsigned)error));
+  });
+
+  ArduinoOTA.begin();
+  Serial.printf("[OTA] ready, hostname=solarbridge-lcd ip=%s\n", WiFi.localIP().toString().c_str());
+}
+
 // ── Status LEDs ───────────────────────────────────────────────────────────
 // Low-battery LED: flashes at a fixed rate whenever SoC < 30%, off otherwise.
 // Load LED: flashes whenever load% >= 50%, and speeds up as load climbs —
@@ -484,24 +594,15 @@ void setup() {
   if (pollIntervalMs < 2000) pollIntervalMs = 5000;
 
   WiFi.mode(WIFI_STA);
-  if (strlen(DEFAULT_WIFI_SSID) > 0) {
-    Serial.printf("[WiFi] connecting to '%s'...\n", DEFAULT_WIFI_SSID);
-    WiFi.begin(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASS);
-  } else {
-    WiFi.begin();  // last WiFi creds saved by the SDK, if any
-  }
-  lcdMessage("Solar Bridge", "Connecting WiFi");
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
-    delay(250);
-    Serial.print('.');
-  }
+  bool connected = connectWiFi();
   Serial.printf("\n[WiFi] status=%d (3=connected) ip=%s\n", WiFi.status(), WiFi.localIP().toString().c_str());
 
-  if (WiFi.status() != WL_CONNECTED || strlen(apiToken) == 0) {
+  if (!connected || strlen(apiToken) == 0) {
     Serial.println("[WiFi] falling back to setup portal");
     runWiFiPortal();
   }
+
+  setupOTA();
 
   fetchState();
   lastPoll = millis();
@@ -512,6 +613,8 @@ void setup() {
 void loop() {
   unsigned long now = millis();
   bool dirty = false;
+
+  ArduinoOTA.handle();
 
   if (now - lastPoll >= pollIntervalMs) {
     lastPoll = now;
@@ -526,5 +629,6 @@ void loop() {
 
   if (dirty) renderPage();
   updateLeds();
+  retryWiFiIfNeeded();
   delay(20);
 }
