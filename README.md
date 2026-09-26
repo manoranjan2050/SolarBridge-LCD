@@ -226,4 +226,6 @@ and skip TLS entirely.
   the Raspberry Pi bridge + web dashboard this pairs with.
 - [SolarBridgeApp](https://github.com/manoranjan2050/SolarBridgeApp) — the Android companion app.
 - [LCD-Custom-Icons](https://github.com/manoranjan2050/LCD-Custom-Icons) — the icon set used here.
+- [SolarBridge-Matrix](https://github.com/manoranjan2050/SolarBridge-Matrix) — a MAX7219 8x32
+  dot-matrix satellite display (same backend, different screen).
 - Built by [ElectroIoT](https://electroiot.in)
